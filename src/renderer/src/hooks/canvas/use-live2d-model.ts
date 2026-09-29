@@ -12,6 +12,8 @@ import { initializeLive2D } from '@cubismsdksamples/main';
 import { useMode } from '@/context/mode-context';
 import { petBus } from '@/pet/pet-bus';
 import { useModelHoverStore } from '@/pet/hover-store';
+import { pickTapMotion, shouldPlayTapMotion } from '@/pet/tap-motion';
+import { useAiState } from '@/context/ai-state-context';
 
 interface UseLive2DModelProps {
   modelInfo: ModelInfo | undefined;
@@ -104,6 +106,9 @@ export const useLive2DModel = ({
   const modelPositionRef = useRef<Position>({ x: 0, y: 0 });
   const prevModelUrlRef = useRef<string | null>(null);
   const lastTapTimeRef = useRef(0);
+  const { aiState } = useAiState();
+  const aiStateRef = useRef(aiState);
+  aiStateRef.current = aiState;
   const electronApi = (window as any).electron;
 
   // --- State for Tap vs Drag ---
@@ -380,7 +385,14 @@ export const useLive2DModel = ({
           lastTapTimeRef.current = isDouble ? 0 : tapNow;
           petBus.emitInteraction(isDouble ? 'double_click' : 'click', tapHitArea ?? null);
         }
-        const allowTapMotion = modelInfo?.pointerInteractive !== false;
+        // Mili: no tap motion while she is busy in pet mode, and only the
+        // indices allowed by tapMotionIndices (model_dict.json).
+        const allowTapMotion = shouldPlayTapMotion({
+          isPet,
+          aiState: aiStateRef.current,
+          pointerInteractive: modelInfo?.pointerInteractive !== false,
+          hasTapMotions: !!modelInfo?.tapMotions,
+        });
 
         if (allowTapMotion && modelInfo?.tapMotions) {
           // Use mouse down position for hit testing
@@ -394,7 +406,14 @@ export const useLive2DModel = ({
 
           const hitAreaName = model.anyhitTest(modelX, modelY);
           // Trigger tap motion using the specific hit area name or null for general body tap
-          model.startTapMotion(hitAreaName, modelInfo.tapMotions);
+          const pick = pickTapMotion(
+            modelInfo.tapMotions,
+            hitAreaName,
+            modelInfo.tapMotionIndices,
+            (group) => adapter.getMotionCount(group),
+            Math.random,
+          );
+          if (pick) model.startMotion(pick.group, pick.index, 3);
         }
       }
       // --- End Tap Motion Logic ---

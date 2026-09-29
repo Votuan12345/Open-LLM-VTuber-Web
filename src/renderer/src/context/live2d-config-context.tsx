@@ -66,6 +66,9 @@ export interface ModelInfo {
   /** Tap motion mapping configuration */
   tapMotions?: TapMotionMap;
 
+  /** Mili: allowed motion indices per group for tap motions (model_dict.json). */
+  tapMotionIndices?: Record<string, number[]>;
+
   /** Enable scroll to resize */
   scrollToResize?: boolean;
 

@@ -13,6 +13,7 @@ import { useWebSocket } from '@/context/websocket-context';
 import { DisplayText } from '@/services/websocket-service';
 import { useLive2DExpression } from '@/hooks/canvas/use-live2d-expression';
 import * as LAppDefine from '../../../WebSDK/src/lappdefine';
+import { expressionForSilentPayload } from '@/pet/silent-expression';
 
 // Simple type alias for Live2D model
 type Live2DModel = any;
@@ -213,6 +214,16 @@ export const useAudioTask = () => {
 
         audio.load();
       } else {
+        // Mili: expression-only payloads (idle expressions, reactions) have no audio.
+        const silentExpression = expressionForSilentPayload(audioBase64, expressions);
+        const lappAdapter = (window as any).getLAppAdapter?.();
+        if (silentExpression !== null && lappAdapter) {
+          setExpression(
+            silentExpression,
+            lappAdapter,
+            `Set expression (no audio) to: ${silentExpression}`,
+          );
+        }
         resolve();
       }
     } catch (error) {
