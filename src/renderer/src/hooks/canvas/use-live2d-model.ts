@@ -10,6 +10,8 @@ import { updateModelConfig } from '../../../WebSDK/src/lappdefine';
 import { LAppDelegate } from '../../../WebSDK/src/lappdelegate';
 import { initializeLive2D } from '@cubismsdksamples/main';
 import { useMode } from '@/context/mode-context';
+import { petBus } from '@/pet/pet-bus';
+import { useModelHoverStore } from '@/pet/hover-store';
 
 interface UseLive2DModelProps {
   modelInfo: ModelInfo | undefined;
@@ -24,6 +26,7 @@ interface Position {
 // Thresholds for tap vs drag detection
 const TAP_DURATION_THRESHOLD_MS = 200; // Max duration for a tap
 const DRAG_DISTANCE_THRESHOLD_PX = 5; // Min distance to be considered a drag
+const DOUBLE_TAP_MS = 350; // Mili: second tap within this window is a double click
 
 function parseModelUrl(url: string): { baseUrl: string; modelDir: string; modelFileName: string } {
   try {
@@ -100,7 +103,7 @@ export const useLive2DModel = ({
   const modelStartPos = useRef<Position>({ x: 0, y: 0 }); // Model coordinates at drag start
   const modelPositionRef = useRef<Position>({ x: 0, y: 0 });
   const prevModelUrlRef = useRef<string | null>(null);
-  const isHoveringModelRef = useRef(false);
+  const lastTapTimeRef = useRef(0);
   const electronApi = (window as any).electron;
 
   // --- State for Tap vs Drag ---
@@ -257,6 +260,7 @@ export const useLive2DModel = ({
       if (distanceMoved > DRAG_DISTANCE_THRESHOLD_PX || (timeElapsed > TAP_DURATION_THRESHOLD_MS && distanceMoved > 1)) {
         isPotentialTapRef.current = false; // It's a drag, not a tap
         setIsDragging(true);
+        if (isPet) petBus.emitDrag('start');
 
         // Set initial drag screen position using the position from mousedown
         const canvas = canvasRef.current;
@@ -325,8 +329,8 @@ export const useLive2DModel = ({
 
       const currentHitState = model.anyhitTest(modelX, modelY) !== null || model.isHitOnModel(modelX, modelY);
 
-      if (currentHitState !== isHoveringModelRef.current) {
-        isHoveringModelRef.current = currentHitState;
+      if (currentHitState !== useModelHoverStore.getState().hovering) {
+        useModelHoverStore.getState().setHovering(currentHitState);
         electronApi.ipcRenderer.send('update-component-hover', 'live2d-model', currentHitState);
       }
     }
@@ -341,6 +345,7 @@ export const useLive2DModel = ({
     if (isDragging) {
       // Finalize drag
       setIsDragging(false);
+      if (isPet) petBus.emitDrag('end');
       if (adapter) {
         const currentModel = adapter.getModel(); // Re-get model in case adapter changed
         if (currentModel && currentModel._modelMatrix) {
@@ -360,6 +365,19 @@ export const useLive2DModel = ({
 
       // Check if it qualifies as a tap (short duration, minimal movement)
       if (timeElapsed < TAP_DURATION_THRESHOLD_MS && distanceMoved < DRAG_DISTANCE_THRESHOLD_PX) {
+        if (isPet) {
+          const tapCanvas = canvasRef.current;
+          const tapRect = tapCanvas.getBoundingClientRect();
+          const tapScale = tapCanvas.width / tapCanvas.clientWidth;
+          const tapHitArea = model.anyhitTest(
+            view._deviceToScreen.transformX((mouseDownPosRef.current.x - tapRect.left) * tapScale),
+            view._deviceToScreen.transformY((mouseDownPosRef.current.y - tapRect.top) * tapScale),
+          );
+          const tapNow = Date.now();
+          const isDouble = tapNow - lastTapTimeRef.current <= DOUBLE_TAP_MS;
+          lastTapTimeRef.current = isDouble ? 0 : tapNow;
+          petBus.emitInteraction(isDouble ? 'double_click' : 'click', tapHitArea ?? null);
+        }
         const allowTapMotion = modelInfo?.pointerInteractive !== false;
 
         if (allowTapMotion && modelInfo?.tapMotions) {
@@ -382,7 +400,7 @@ export const useLive2DModel = ({
 
     // Reset potential tap flag regardless of outcome
     isPotentialTapRef.current = false;
-  }, [isDragging, canvasRef, modelInfo]);
+  }, [isPet, isDragging, canvasRef, modelInfo]);
 
   const handleMouseLeave = useCallback(() => {
     if (isDragging) {
@@ -394,15 +412,15 @@ export const useLive2DModel = ({
       isPotentialTapRef.current = false;
     }
     // --- Pet Hover Logic (Unchanged) ---
-    if (isPet && electronApi && isHoveringModelRef.current) {
-      isHoveringModelRef.current = false;
+    if (isPet && electronApi && useModelHoverStore.getState().hovering) {
+      useModelHoverStore.getState().setHovering(false);
       electronApi.ipcRenderer.send('update-component-hover', 'live2d-model', false);
     }
   }, [isPet, isDragging, electronApi, handleMouseUp]);
 
   useEffect(() => {
-    if (!isPet && electronApi && isHoveringModelRef.current) {
-      isHoveringModelRef.current = false;
+    if (!isPet && electronApi && useModelHoverStore.getState().hovering) {
+      useModelHoverStore.getState().setHovering(false);
     }
   }, [isPet, electronApi]);
 

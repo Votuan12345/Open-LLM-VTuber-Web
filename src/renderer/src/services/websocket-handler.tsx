@@ -21,6 +21,7 @@ import { useLocalStorage } from '@/hooks/utils/use-local-storage';
 import { useGroup } from '@/context/group-context';
 import { useInterrupt } from '@/hooks/utils/use-interrupt';
 import { useBrowser } from '@/context/browser-context';
+import { petBus } from '@/pet/pet-bus';
 
 function WebSocketHandler({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -255,6 +256,10 @@ function WebSocketHandler({ children }: { children: React.ReactNode }) {
             return currentState;
           });
         }
+        break;
+      case 'pet-command':
+        // Mili desktop pet (Electron only); validated by the pet controller.
+        petBus.emitCommand(message);
         break;
       case 'force-new-message':
         setForceNewMessage(true);
