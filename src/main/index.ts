@@ -3,6 +3,7 @@ import { app, ipcMain, globalShortcut, desktopCapturer } from "electron";
 import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { WindowManager } from "./window-manager";
 import { MenuManager } from "./menu-manager";
+import { registerPetIpc } from "./pet-ipc";
 
 let windowManager: WindowManager;
 let menuManager: MenuManager;
@@ -110,6 +111,7 @@ app.whenReady().then(() => {
   // }
 
   setupIPC();
+  registerPetIpc(() => windowManager.getWindow());
 
   app.on("activate", () => {
     const window = windowManager.getWindow();

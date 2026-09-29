@@ -63,6 +63,24 @@ const api = {
     ipcRenderer.send('pre-mode-changed', mode);
   },
   getConfigFiles: () => ipcRenderer.invoke('get-config-files'),
+  pet: {
+    getLayout: () => ipcRenderer.invoke('pet:get-layout'),
+    getCursor: () => ipcRenderer.invoke('pet:get-cursor'),
+    screenToDipRect: (rect: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('pet:screen-to-dip-rect', rect),
+    onLayoutChanged: (callback: (layout: any) => void) => {
+      const handler = (_event: any, layout: any) => callback(layout);
+      ipcRenderer.on('pet:layout-changed', handler);
+      return () => ipcRenderer.removeListener('pet:layout-changed', handler);
+    },
+    onToggleMovement: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('pet:toggle-movement', handler);
+      return () => ipcRenderer.removeListener('pet:toggle-movement', handler);
+    },
+    reportMovementState: (enabled: boolean) => {
+      ipcRenderer.send('pet:movement-state', enabled);
+    },
+  },
   updateConfigFiles: (files: ConfigFile[]) => {
     ipcRenderer.send('update-config-files', files);
   },

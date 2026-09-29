@@ -17,8 +17,24 @@ export class MenuManager {
 
   private configFiles: ConfigFile[] = [];
 
+  // Mili: the renderer owns this value and echoes it back via 'pet:movement-state'.
+  private movementEnabled = true;
+
   constructor(private onModeChange: (mode: 'window' | 'pet') => void) {
     this.setupContextMenu();
+    ipcMain.on('pet:movement-state', (_event, enabled: boolean) => {
+      this.movementEnabled = !!enabled;
+      this.updateTrayMenu();
+    });
+  }
+
+  private getMovementMenuItem(send: (channel: string) => void): MenuItemConstructorOptions {
+    return {
+      label: 'Autonomous Movement',
+      type: 'checkbox' as const,
+      checked: this.movementEnabled,
+      click: () => send('pet:toggle-movement'),
+    };
   }
 
   createTray(): void {
@@ -73,6 +89,9 @@ export class MenuManager {
               });
             },
           },
+          this.getMovementMenuItem((channel) => {
+            BrowserWindow.getAllWindows().forEach((window) => window.webContents.send(channel));
+          }),
           { type: 'separator' as const },
         ]
         : []),
@@ -130,6 +149,7 @@ export class MenuManager {
               event.sender.send('toggle-force-ignore-mouse');
             },
           },
+          this.getMovementMenuItem((channel) => event.sender.send(channel)),
         ]
         : []),
       {

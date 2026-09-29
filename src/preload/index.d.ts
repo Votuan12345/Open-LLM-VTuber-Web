@@ -18,6 +18,14 @@ declare global {
       setMode: (mode: 'window' | 'pet') => void
       getConfigFiles: () => Promise<any>
       updateConfigFiles: (files: any[]) => void
+      pet?: {
+        getLayout: () => Promise<import('../renderer/src/pet/geometry').Layout>
+        getCursor: () => Promise<{ x: number; y: number }>
+        screenToDipRect: (rect: import('../renderer/src/pet/geometry').Rect) => Promise<import('../renderer/src/pet/geometry').Rect | null>
+        onLayoutChanged: (callback: (layout: import('../renderer/src/pet/geometry').Layout) => void) => () => void
+        onToggleMovement: (callback: () => void) => () => void
+        reportMovementState: (enabled: boolean) => void
+      }
     }
   }
 }
