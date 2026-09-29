@@ -67,6 +67,7 @@ class FakeModel implements ModelPort {
 function setup(opts: { box?: Rect; rng?: number[]; cursor?: Point } = {}) {
   const sent: any[] = [];
   const hover: boolean[] = [];
+  const hoverState = { value: false };
   let now = 1000;
   const rafs = new Map<number, (t: number) => void>();
   let rafSeq = 0;
@@ -92,7 +93,11 @@ function setup(opts: { box?: Rect; rng?: number[]; cursor?: Point } = {}) {
     cancelRaf: (id) => {
       rafs.delete(id);
     },
-    setHover: (h) => hover.push(h),
+    getHover: () => hoverState.value,
+    setHover: (h) => {
+      hover.push(h);
+      hoverState.value = h;
+    },
   };
   const ctl = new DesktopPetController(deps);
   const flush = async () => {
@@ -106,7 +111,7 @@ function setup(opts: { box?: Rect; rng?: number[]; cursor?: Point } = {}) {
     await flush();
   };
   const results = () => sent.filter((m) => m.type === 'pet-status' && m.result);
-  return { ctl, sent, hover, model, settings, deps, step, flush, results, cursor, rafs, advance: (ms: number) => { now += ms; } };
+  return { ctl, sent, hover, hoverState, model, settings, deps, step, flush, results, cursor, rafs, advance: (ms: number) => { now += ms; } };
 }
 
 const wander = (id = 'c-1') => ({ type: 'pet-command', id, command: 'wander', params: { distance: 'short', speed: 'normal' } });
@@ -215,9 +220,52 @@ describe('DesktopPetController', () => {
     expect(env.settings.getHome()).toEqual({ x: 400, y: 300 });
   });
 
-  it('entering pet mode stores a home when none exists', async () => {
+  it('first movement command stores a home when none exists', async () => {
     await petReady(env);
+    expect(env.settings.getHome()).toBeNull();
+    await env.ctl.handleCommand(wander());
     expect(env.settings.getHome()).toEqual({ x: 400, y: 300 });
+  });
+
+  it('hover refresh uses the shared hover state across moves', async () => {
+    env = setup({ cursor: { x: 450, y: 400 } });
+    await petReady(env);
+    await env.ctl.handleCommand(wander('c-1'));
+    for (let i = 0; i < 40; i += 1) await env.step(50);
+    expect(env.hoverState.value).toBe(false);
+    // The user rests the cursor on Mili: the mouse path marks the window as catching the mouse.
+    const box = env.model.getBoxDip()!;
+    // Cursor near Mili's left edge: after the first frame of the next move it is already off her.
+    env.cursor.value = { x: box.x + 5, y: box.y + 100 };
+    env.hoverState.value = true;
+    const before = env.hover.length;
+    await env.ctl.handleCommand(wander('c-2'));
+    await env.step(400);
+    for (let i = 0; i < 40; i += 1) await env.step(50);
+    expect(env.hover.slice(before)).toContain(false);
+    expect(env.hoverState.value).toBe(false);
+  });
+
+  it('mode switch clears a stuck drag', async () => {
+    await petReady(env);
+    env.ctl.onDragStart();
+    env.ctl.setMode('window');
+    env.ctl.setMode('pet');
+    expect(env.ctl.state).toBe('idle');
+    await env.ctl.handleCommand(wander());
+    expect(env.ctl.state).toBe('moving');
+  });
+
+  it('grab on the model cancels a running move without entering drag state', async () => {
+    await petReady(env);
+    await env.ctl.handleCommand(wander());
+    await env.step(100);
+    env.ctl.onGrab();
+    const calls = env.model.setCalls;
+    await env.step(100);
+    expect(env.model.setCalls).toBe(calls);
+    expect(env.results().map((m) => [m.result, m.reason])).toEqual([['cancelled', 'user_drag']]);
+    expect(env.ctl.state).toBe('idle');
   });
 
   it('refreshHover sends false when model moved away', async () => {

@@ -39,6 +39,8 @@ export interface ControllerDeps {
   now(): number;
   raf(cb: (t: number) => void): number;
   cancelRaf(id: number): void;
+  /** Shared "window catches the mouse over the model" flag (also set by the mouse handlers). */
+  getHover(): boolean;
   setHover(hit: boolean): void;
 }
 
@@ -70,8 +72,6 @@ export class DesktopPetController {
 
   private lastHoverCheck = -Infinity;
 
-  private lastHover: boolean | null = null;
-
   constructor(private readonly deps: ControllerDeps) {}
 
   get state(): ControllerState {
@@ -88,10 +88,8 @@ export class DesktopPetController {
     if (mode === this.mode) return;
     if (mode !== 'pet') this.cancel('not_pet_mode');
     this.mode = mode;
-    if (mode === 'pet' && !this.deps.settings.getHome()) {
-      const box = this.deps.model.getBoxDip();
-      if (box) this.deps.settings.setHome({ x: box.x, y: box.y });
-    }
+    // A drag cut short by a mode switch never reports its end.
+    this.dragging = false;
     this.sendStatus();
   }
 
@@ -108,6 +106,12 @@ export class DesktopPetController {
 
   onDragStart(): void {
     this.dragging = true;
+    this.commandSeq += 1;
+    this.cancel('user_drag');
+  }
+
+  /** Pointer went down on the model: stop moving so a drag starts from where she is. */
+  onGrab(): void {
     this.commandSeq += 1;
     this.cancel('user_drag');
   }
@@ -196,6 +200,8 @@ export class DesktopPetController {
       this.sendResult(cmd.id, 'rejected', 'model_reloaded');
       return;
     }
+    // Default home = where she stood before her first move (layout is fresh here).
+    if (!settings.getHome()) settings.setHome({ x: box.x, y: box.y });
     const plan = planTarget(cmd, { box, home: settings.getHome() }, layout, this.deps.rng, rectDip);
     if (!plan.ok) {
       if (plan.reason === 'home_invalid') settings.setHome({ x: box.x, y: box.y });
@@ -265,10 +271,7 @@ export class DesktopPetController {
     try {
       const cursor = await this.deps.getCursor();
       const hit = this.deps.model.hitTestScreen(cursor);
-      if (hit !== this.lastHover) {
-        this.lastHover = hit;
-        this.deps.setHover(hit);
-      }
+      if (hit !== this.deps.getHover()) this.deps.setHover(hit);
     } catch (e) {
       console.debug('[Pet] hover refresh failed', e);
     }

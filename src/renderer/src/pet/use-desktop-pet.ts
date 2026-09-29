@@ -43,6 +43,7 @@ export function useDesktopPet(): void {
   const { mode } = useMode();
   const { aiState } = useAiState();
   const controllerRef = useRef<DesktopPetController | null>(null);
+  const layoutRef = useRef<Layout | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -50,7 +51,6 @@ export function useDesktopPet(): void {
     const api = getPetApi();
     if (!api) return undefined;
 
-    const layoutRef: { current: Layout | null } = { current: null };
     const settings = createPetSettings(safeLocalStorage());
     const model = createModelPort({
       getAdapter: () => (window as any).getLAppAdapter?.() ?? null,
@@ -77,15 +77,13 @@ export function useDesktopPet(): void {
       now: () => performance.now(),
       raf: (cb) => requestAnimationFrame(cb),
       cancelRaf: (id) => cancelAnimationFrame(id),
+      getHover: () => useModelHoverStore.getState().hovering,
       setHover: (hit) => {
         useModelHoverStore.getState().setHovering(hit);
         (window as any).api?.updateComponentHover?.('live2d-model', hit);
       },
     });
     controllerRef.current = controller;
-    controller.setMode(modeRef.current);
-
-    api.getLayout().then((layout) => { layoutRef.current = layout; }).catch(() => {});
     api.reportMovementState(settings.getMovementEnabled());
 
     const stateSub = wsService.onStateChange((state) => {
@@ -101,6 +99,10 @@ export function useDesktopPet(): void {
         if (modeRef.current === 'pet') sendIfOpen(interactionMsg(kind, hitArea));
       }),
       petBus.onDrag((phase) => {
+        if (phase === 'grab') {
+          controller.onGrab();
+          return;
+        }
         if (phase === 'start') controller.onDragStart();
         else controller.onDragEnd();
         if (modeRef.current === 'pet') sendIfOpen(interactionMsg(phase === 'start' ? 'drag_start' : 'drag_end', null));
@@ -124,7 +126,27 @@ export function useDesktopPet(): void {
   }, []);
 
   useEffect(() => {
-    controllerRef.current?.setMode(mode);
+    // The pet window's origin changes with the mode (windowed bounds vs virtual
+    // screen); refresh the layout before the controller acts in the new mode.
+    let cancelled = false;
+    const api = getPetApi();
+    const apply = () => {
+      if (!cancelled) controllerRef.current?.setMode(mode);
+    };
+    if (!api) {
+      apply();
+      return undefined;
+    }
+    api
+      .getLayout()
+      .then((layout) => {
+        layoutRef.current = layout;
+      })
+      .catch(() => {})
+      .finally(apply);
+    return () => {
+      cancelled = true;
+    };
   }, [mode]);
 
   useEffect(() => {

@@ -230,6 +230,8 @@ export const useLive2DModel = ({
     // --- End Check ---
 
     if (hitAreaName !== null || isHitOnModel) {
+      // Mili: stop autonomous movement first so a drag starts from where she is.
+      if (isPet) petBus.emitDrag('grab');
       // Record potential tap/drag start
       mouseDownTimeRef.current = Date.now();
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY }; // Use clientX/Y for distance check
@@ -242,7 +244,7 @@ export const useLive2DModel = ({
         modelStartPos.current = { x: matrix[12], y: matrix[13] };
       }
     }
-  }, [canvasRef, modelInfo]);
+  }, [isPet, canvasRef, modelInfo]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const adapter = (window as any).getLAppAdapter?.();

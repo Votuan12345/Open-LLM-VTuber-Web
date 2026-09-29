@@ -25,7 +25,8 @@ function channel<A extends unknown[]>() {
   };
 }
 
-export type DragPhase = 'start' | 'end';
+// 'grab' = pointer down on the model (may still become a click).
+export type DragPhase = 'grab' | 'start' | 'end';
 
 export function createPetBus() {
   const command = channel<[unknown]>();
